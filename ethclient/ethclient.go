@@ -22,9 +22,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
-
 	"github.com/ethereum/go-ethereum"
+	"log"
+	"math/big"
+	"sync"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -508,6 +510,9 @@ func (ec *Client) PendingTransactionCount(ctx context.Context) (uint, error) {
 	return uint(num), err
 }
 
+var mutex sync.Mutex
+var debugMap = make(map[string]uint64)
+
 // Contract Calling
 
 // CallContract executes a message call transaction, which is directly executed in the VM
@@ -517,6 +522,12 @@ func (ec *Client) PendingTransactionCount(ctx context.Context) (uint, error) {
 // case the code is taken from the latest known block. Note that state from very old
 // blocks might not be available.
 func (ec *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	id := msg.To.String() + ":" + string(msg.Data[:4])
+	mutex.Lock()
+	debugMap[id] = debugMap[id] + 1
+	mutex.Unlock()
+	log.Printf(fmt.Sprintf("[ClientDebug]::CallContract: ctx=%+v, msg=%+v, debugMap=%+v", ctx, msg, debugMap))
+
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), toBlockNumArg(blockNumber))
 	if err != nil {
@@ -528,6 +539,12 @@ func (ec *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockN
 // CallContractAtHash is almost the same as CallContract except that it selects
 // the block by block hash instead of block height.
 func (ec *Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error) {
+	id := msg.To.String() + ":" + string(msg.Data[:4])
+	mutex.Lock()
+	debugMap[id] = debugMap[id] + 1
+	mutex.Unlock()
+	log.Printf(fmt.Sprintf("[ClientDebug]::CallContractAtHash: ctx=%+v, msg=%+v, debugMap=%+v", ctx, msg, debugMap))
+
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), rpc.BlockNumberOrHashWithHash(blockHash, false))
 	if err != nil {
@@ -539,6 +556,12 @@ func (ec *Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, 
 // PendingCallContract executes a message call transaction using the EVM.
 // The state seen by the contract call is the pending state.
 func (ec *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error) {
+	id := msg.To.String() + ":" + string(msg.Data[:4])
+	mutex.Lock()
+	debugMap[id] = debugMap[id] + 1
+	mutex.Unlock()
+	log.Printf(fmt.Sprintf("[ClientDebug]::PendingCallContract: ctx=%+v, msg=%+v, debugMap=%+v", ctx, msg, debugMap))
+
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), "pending")
 	if err != nil {
