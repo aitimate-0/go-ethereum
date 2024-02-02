@@ -26,6 +26,7 @@ import (
 	"log"
 	"math/big"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -513,33 +514,26 @@ func (ec *Client) PendingTransactionCount(ctx context.Context) (uint, error) {
 var mutex sync.Mutex
 var debugMap = make(map[string]uint64)
 
-var count = 0
+var initialized = false
 
-func debugAll(ctx context.Context, msg ethereum.CallMsg) {
+func debugAll(msg ethereum.CallMsg) {
 	if len(msg.Data) > 4 {
 		id := msg.To.String() + ":" + common.Bytes2Hex(msg.Data[:4])
 		mutex.Lock()
+		defer mutex.Unlock()
 		debugMap[id] = debugMap[id] + 1
-		mutex.Unlock()
-		if count++; count%10000 == 0 {
-			log.Printf(fmt.Sprintf("[ClientDebug]::eth_call::all: ctx=%+v, msg=%+v, debugMap=%+v", ctx, msg, debugMap))
-		}
-	}
-}
-
-var mutex2 sync.Mutex
-var debugMap2 = make(map[string]uint64)
-
-var count2 = 0
-
-func debugSuccess(ctx context.Context, msg ethereum.CallMsg) {
-	if len(msg.Data) > 4 {
-		id := msg.To.String() + ":" + common.Bytes2Hex(msg.Data[:4])
-		mutex2.Lock()
-		debugMap2[id] = debugMap2[id] + 1
-		mutex2.Unlock()
-		if count2++; count2%10000 == 0 {
-			log.Printf(fmt.Sprintf("[ClientDebug]::eth_call::success: ctx=%+v, msg=%+v, debugMap=%+v", ctx, msg, debugMap2))
+		if !initialized {
+			initialized = true
+			go func() {
+				secTicker := time.NewTicker(time.Second)
+				for {
+					<-secTicker.C
+					if now := time.Now().Unix(); now%60*60 == 0 {
+						log.Printf(fmt.Sprintf("[ClientDebug]::eth_call: now=%+v, debugMap=%+v", now, debugMap))
+						debugMap = make(map[string]uint64)
+					}
+				}
+			}()
 		}
 	}
 }
@@ -553,7 +547,7 @@ func debugSuccess(ctx context.Context, msg ethereum.CallMsg) {
 // case the code is taken from the latest known block. Note that state from very old
 // blocks might not be available.
 func (ec *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
-	go debugAll(ctx, msg)
+	go debugAll(msg)
 
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), toBlockNumArg(blockNumber))
@@ -561,15 +555,13 @@ func (ec *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockN
 		return nil, err
 	}
 
-	go debugSuccess(ctx, msg)
-
 	return hex, nil
 }
 
 // CallContractAtHash is almost the same as CallContract except that it selects
 // the block by block hash instead of block height.
 func (ec *Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error) {
-	go debugAll(ctx, msg)
+	go debugAll(msg)
 
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), rpc.BlockNumberOrHashWithHash(blockHash, false))
@@ -577,23 +569,19 @@ func (ec *Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, 
 		return nil, err
 	}
 
-	go debugSuccess(ctx, msg)
-
 	return hex, nil
 }
 
 // PendingCallContract executes a message call transaction using the EVM.
 // The state seen by the contract call is the pending state.
 func (ec *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error) {
-	go debugAll(ctx, msg)
+	go debugAll(msg)
 
 	var hex hexutil.Bytes
 	err := ec.c.CallContext(ctx, &hex, "eth_call", toCallArg(msg), "pending")
 	if err != nil {
 		return nil, err
 	}
-
-	go debugSuccess(ctx, msg)
 
 	return hex, nil
 }
